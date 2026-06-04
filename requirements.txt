@@ -1,0 +1,19 @@
+# Video Auto-Poster — Python dependencies
+# Python 3.11+ required.
+
+# --- Core SDKs ---
+dropbox>=12.0.0                  # Dropbox API (list / download / move)
+google-api-python-client>=2.130  # YouTube Data API v3
+google-auth>=2.30                # Google auth primitives
+google-auth-oauthlib>=1.2        # OAuth installed-app flow (refresh token mint)
+anthropic>=0.40                  # Anthropic API (metadata generation — the ONLY LLM call)
+
+# --- Facebook ---
+# No official Graph SDK is used; we call the Graph API over HTTPS with requests
+# and pin the version explicitly (see GRAPH_API_VERSION in facebook_upload.py).
+requests>=2.32
+
+# --- Config / validation / utilities ---
+python-dotenv>=1.0              # load .env
+pydantic>=2.7                   # typed settings + metadata schema validation
+PyYAML>=6.0                     # config.yaml parsing

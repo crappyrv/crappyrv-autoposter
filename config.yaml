@@ -1,0 +1,92 @@
+# =============================================================================
+# Video Auto-Poster — non-secret settings.
+# Secrets live in .env (see .env.example). Anything here is safe to commit.
+# config.py merges this file with .env into one typed settings object.
+# =============================================================================
+
+dropbox:
+  # Folder watched for new videos (Dropbox path from the account root).
+  watch_folder: "/CrappyRV - Video Folder for Posting/incoming"
+  # Source moves here ONLY after BOTH uploads succeed.
+  posted_folder: "/CrappyRV - Video Folder for Posting/posted"
+  # Source moves here on any failure.
+  failed_folder: "/CrappyRV - Video Folder for Posting/failed"
+  # File extensions treated as videos (lowercase, with dot).
+  video_extensions:
+    - ".mp4"
+    - ".mov"
+    - ".m4v"
+    - ".avi"
+    - ".mkv"
+
+youtube:
+  # One of: private | unlisted | public
+  # Set to "public" per owner's choice (full-auto mode). Was "unlisted".
+  privacy_status: "public"
+  # YouTube category id. 22 = "People & Blogs". 19 = "Travel & Events".
+  category_id: "22"
+  # Tell YouTube whether the content is "made for kids".
+  made_for_kids: false
+
+facebook:
+  # Graph API version is ALSO pinned as a constant in code; this mirrors it so
+  # it is visible/overridable in config. Keep both in sync.
+  graph_api_version: "v25.0"
+
+anthropic:
+  # Model used for the single metadata-generation call.
+  model: "claude-opus-4-8"
+  max_tokens: 1500
+
+brand:
+  # Brand context handed to the LLM so metadata sounds on-brand. Edit freely —
+  # metadata.py reads all of this from here; nothing about the brand is hardcoded.
+  name: "CrappyRV"
+  description: >
+    RV-industry watchdog brand. Honest, unfiltered RV ownership reality from a
+    family that's lived it. Not selling RVs or RV products, not paid by
+    manufacturers. Helps the RV community avoid lemons and hold the industry
+    accountable.
+  voice: >
+    Wry, candid, a little weary, firmly pro-consumer. Funny but credible — never
+    clickbait, never fake outrage.
+  # Hard content rules the model must obey (each enforced by the voice prompt;
+  # the required hashtag below is ALSO enforced by the validator).
+  rules:
+    - "Never include anyone's last name."
+    - "Do not name individual family members; refer to 'we' / 'our family'."
+    - "Never claim manufacturer sponsorship, endorsement, or payment."
+    - "No defamatory or absolute factual claims about a specific company."
+  # On schema/parse failure we retry exactly once with a stricter instruction,
+  # then fail loud. (Retry COUNT is fixed at 1 per the spec; not configurable.)
+
+metadata:
+  # Guardrails the validator enforces on LLM output.
+  title_max_length: 100          # YouTube hard limit
+  description_max_length: 5000    # YouTube hard limit
+  tags_max_count: 15
+  # Hashtags ALWAYS included on every post (guaranteed in the Facebook caption
+  # AND the YouTube description; their keyword forms are also added to YouTube
+  # tags). The AI is told to include these and may add more relevant ones.
+  required_hashtags:
+    - "#goodluckoutthere"
+    - "#crappyrv"
+    - "#alliancerv"
+
+logging:
+  # Rotating log file.
+  file: "logs/autoposter.log"
+  level: "INFO"
+  max_bytes: 5242880   # 5 MB per file
+  backup_count: 5
+
+run:
+  # Hard cap on how many new videos a single `main.py` pass will process.
+  max_videos_per_run: 5
+  # Where downloaded videos are buffered during a publish run.
+  tmp_dir: "tmp"
+  # FULL-AUTO MODE (owner's choice). When true, main.py does NOT stop at the
+  # approval gate — it generates metadata and immediately publishes each new
+  # video to YouTube + Facebook, then moves the source. Set to false to restore
+  # the human approval gate (main.py writes a pending file and stops).
+  auto_publish: true

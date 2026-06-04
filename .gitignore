@@ -1,0 +1,52 @@
+# --- Secrets: NEVER commit ---
+.env
+*.env
+!.env.example
+
+# OAuth / token artifacts that may be written at runtime
+*.token
+*.token.json
+client_secret*.json
+
+# --- Runtime state (cursor, pending/processed records) ---
+state/*
+!state/
+!state/pending/
+!state/pending/.gitkeep
+!state/processed/
+!state/processed/.gitkeep
+# Never commit the actual record files (keep only the empty dirs via .gitkeep)
+state/pending/*
+state/processed/*
+!state/pending/.gitkeep
+!state/processed/.gitkeep
+state/cursor.json
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Downloaded video temp files ---
+tmp/
+*.mp4.part
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
