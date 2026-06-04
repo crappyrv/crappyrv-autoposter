@@ -1,12 +1,14 @@
 name: video-autoposter
 
 # Runs the auto-poster on GitHub's always-on infrastructure (no Mac needed).
-# - schedule: every ~10 min GitHub checks the Dropbox /incoming folder.
-#   (GitHub's scheduler is best-effort and can lag during peak load.)
-# - workflow_dispatch: a manual "Run workflow" button for instant posting.
+# - schedule: every ~30 min GitHub checks the Dropbox /incoming folder.
+#   (Private-repo free tier has limited run-minutes; 30 min keeps us well under.
+#    GitHub's scheduler is also best-effort and can lag during peak load.)
+# - workflow_dispatch: a manual "Run workflow" button (web or GitHub mobile app)
+#   for INSTANT posting on demand — drop a video, tap Run, it posts.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 # Least privilege: the job only needs to read the checked-out code.
