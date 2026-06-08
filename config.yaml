@@ -27,11 +27,20 @@ youtube:
   category_id: "22"
   # Tell YouTube whether the content is "made for kids".
   made_for_kids: false
+  # Append "#Shorts" to the description so vertical, <=3min clips reliably
+  # classify as YouTube Shorts. (One upload = one video; YouTube decides
+  # Short-vs-regular by format, so there is no separate "post a Short" call.)
+  add_shorts_hashtag: true
 
 facebook:
   # Graph API version is ALSO pinned as a constant in code; this mirrors it so
   # it is visible/overridable in config. Keep both in sync.
   graph_api_version: "v25.0"
+  # Post a regular Page video (the /videos edge).
+  post_video: true
+  # ALSO post a Reel (the /video_reels 3-step flow). Reels need vertical 9:16,
+  # ~3-90s clips; non-conforming videos are rejected by Facebook.
+  post_reel: true
 
 anthropic:
   # Model used for the single metadata-generation call.

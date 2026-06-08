@@ -57,10 +57,15 @@ def upload_video(
 
     youtube = build_youtube(cfg)
 
+    # Nudge YouTube to classify vertical, <=3min clips as Shorts.
+    description = metadata.description
+    if cfg.youtube.add_shorts_hashtag and "#shorts" not in description.lower():
+        description = (description.rstrip() + "\n\n#Shorts")[:YT_DESCRIPTION_MAX]
+
     body = {
         "snippet": {
             "title": metadata.title,
-            "description": metadata.description,
+            "description": description,
             "tags": metadata.tags,
             "categoryId": cfg.youtube.category_id,
         },

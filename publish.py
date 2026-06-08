@@ -41,6 +41,7 @@ from typing import Optional
 
 import dropbox_client as dbxc
 import facebook_upload
+import facebook_reels_upload
 import youtube_upload
 from config import Settings, load_config
 from metadata import MetadataError, validate_metadata
@@ -68,6 +69,16 @@ def _write_processed(cfg: Settings, pid: str, record: dict) -> Path:
     tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     return path
+
+
+def _enabled_targets(cfg: Settings) -> list:
+    """Which destinations to post to, per config. Order = upload order."""
+    targets = ["youtube"]  # always on (privacy from config)
+    if cfg.facebook.post_video:
+        targets.append("facebook_video")
+    if cfg.facebook.post_reel:
+        targets.append("facebook_reel")
+    return targets
 
 
 # --- The publish run ---------------------------------------------------------
@@ -116,50 +127,53 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
             logger.warning("[DRY-RUN] source not found at %s: %s", src_path, exc)
         logger.info("[DRY-RUN] pending %s is approved and metadata is valid.", pid)
         logger.info("[DRY-RUN] source exists: %s (%s)", exists, src_path)
-        logger.info("[DRY-RUN] WOULD upload to YouTube: title=%r privacy=%s",
-                    meta.title, privacy)
-        logger.info("[DRY-RUN] WOULD upload to Facebook: caption=%r", meta.facebook_text)
-        target = cfg.dropbox.posted_folder
-        logger.info("[DRY-RUN] WOULD move source -> %s on success (else %s)",
-                    target, cfg.dropbox.failed_folder)
+        for t in _enabled_targets(cfg):
+            logger.info("[DRY-RUN] WOULD post to %s", t)
+        logger.info("[DRY-RUN] title=%r | caption=%r", meta.title, meta.facebook_text)
+        logger.info("[DRY-RUN] WOULD move source -> %s on full success (else %s)",
+                    cfg.dropbox.posted_folder, cfg.dropbox.failed_folder)
         summary = f"DRY-RUN publish.py: {pid} ready to publish (no actions taken)."
         print(summary)
         logger.info(summary)
         return 0
 
-    # --- Real publish ---
-    results = {"youtube": {"ok": False}, "facebook": {"ok": False}}
+    # --- Real publish: run each enabled target; /posted only if ALL succeed ---
+    targets = _enabled_targets(cfg)
+    results: dict = {t: {"ok": False} for t in targets}
     local_path: Optional[Path] = None
-    upload_error: Optional[str] = None
+    download_error: Optional[str] = None
 
     try:
         local_path = dbxc.download_file(dbx, cfg, src_path)
+    except Exception as exc:  # download failure: nothing can post
+        download_error = str(exc)
+        logger.error("Download failed for %s: %s", pid, exc, exc_info=True)
 
-        # YouTube first.
-        yt = youtube_upload.upload_video(cfg, local_path, meta, privacy)
-        results["youtube"] = {"ok": True, **yt}
-
-        # Then Facebook.
-        fb = facebook_upload.upload_video(cfg, local_path, meta)
-        results["facebook"] = {"ok": True, **fb}
-
-    except Exception as exc:  # any upload-phase failure
-        upload_error = str(exc)
-        logger.error("Publish failed for %s: %s", pid, exc, exc_info=True)
-    finally:
-        if local_path and local_path.exists():
+    if local_path is not None:
+        for t in targets:
+            try:
+                if t == "youtube":
+                    results[t] = {"ok": True, **youtube_upload.upload_video(cfg, local_path, meta, privacy)}
+                elif t == "facebook_video":
+                    results[t] = {"ok": True, **facebook_upload.upload_video(cfg, local_path, meta)}
+                elif t == "facebook_reel":
+                    results[t] = {"ok": True, **facebook_reels_upload.upload_reel(cfg, local_path, meta)}
+            except Exception as exc:  # one target failing must not stop the others
+                results[t] = {"ok": False, "error": str(exc)}
+                logger.error("%s failed for %s: %s", t, pid, exc, exc_info=True)
+        if local_path.exists():
             local_path.unlink()  # clean up the downloaded temp file
 
-    both_ok = results["youtube"]["ok"] and results["facebook"]["ok"]
+    all_ok = bool(targets) and download_error is None and all(results[t]["ok"] for t in targets)
 
-    # --- Move the source: /posted only if BOTH succeeded, else /failed ---
+    # --- Move the source: /posted only if ALL targets succeeded, else /failed ---
     final_path = None
     move_error = None
     try:
-        if both_ok:
-            final_path = dbxc.move_to_posted(dbx, cfg, src_path)
-        else:
-            final_path = dbxc.move_to_failed(dbx, cfg, src_path)
+        final_path = (
+            dbxc.move_to_posted(dbx, cfg, src_path) if all_ok
+            else dbxc.move_to_failed(dbx, cfg, src_path)
+        )
     except Exception as exc:  # noqa: BLE001
         move_error = str(exc)
         logger.error("Failed to move source for %s: %s", pid, exc, exc_info=True)
@@ -167,37 +181,32 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
     # --- Record the outcome + remove the pending file (no double-publish ever) ---
     processed = {
         "id": pid,
-        "status": "posted" if both_ok else "failed",
+        "status": "posted" if all_ok else "failed",
         "published_at": _now_iso(),
         "dropbox": {**dbx_info, "final_path": final_path, "move_error": move_error},
         "results": results,
-        "upload_error": upload_error,
+        "download_error": download_error,
         "metadata": meta.model_dump(),
     }
     _write_processed(cfg, pid, processed)
     pending_path.unlink(missing_ok=True)
 
     # --- Notify + summarize ---
-    if both_ok:
-        msg = (
-            f"Published {pid}: YouTube {results['youtube']['url']} "
-            f"(privacy={privacy}), Facebook id {results['facebook']['video_id']}. "
-            f"Source moved to {final_path}."
-        )
-        notify(msg, level="INFO")
+    detail = ", ".join(f"{t}={'ok' if results[t]['ok'] else 'FAIL'}" for t in targets)
+    if all_ok:
+        notify(f"Published {pid}: {detail}. Source moved to {final_path}.", level="INFO")
     else:
-        parts = []
-        if results["youtube"]["ok"]:
-            parts.append(
-                f"YouTube SUCCEEDED ({results['youtube']['url']}, privacy={privacy}) "
-                "— that video exists; delete or adjust it manually if needed"
-            )
-        else:
-            parts.append("YouTube failed")
-        parts.append("Facebook succeeded" if results["facebook"]["ok"] else "Facebook failed")
+        succeeded = [t for t in targets if results[t]["ok"]]
+        note = (
+            " NOTE: these already went LIVE and may need manual cleanup: "
+            + ", ".join(succeeded)
+        ) if succeeded else ""
+        errs = download_error or "; ".join(
+            f"{t}: {results[t].get('error')}" for t in targets if not results[t]["ok"]
+        )
         notify(
-            f"Publish FAILED for {pid}: {'; '.join(parts)}. "
-            f"Error: {upload_error}. Source moved to {final_path or '(move failed!)'}.",
+            f"Publish FAILED for {pid}: {detail}.{note} Error(s): {errs}. "
+            f"Source moved to {final_path or '(move failed!)'}.",
             level="ERROR",
         )
     if move_error:
@@ -208,14 +217,12 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
         )
 
     summary = (
-        f"publish.py: {pid} -> {'POSTED' if both_ok else 'FAILED'}; "
-        f"youtube={'ok' if results['youtube']['ok'] else 'fail'}, "
-        f"facebook={'ok' if results['facebook']['ok'] else 'fail'}; "
-        f"source -> {final_path or 'NOT MOVED'}."
+        f"publish.py: {pid} -> {'POSTED' if all_ok else 'FAILED'}; "
+        f"{detail}; source -> {final_path or 'NOT MOVED'}."
     )
     print(summary)
     logger.info(summary)
-    return 0 if both_ok else 1
+    return 0 if all_ok else 1
 
 
 def main(argv: Optional[list[str]] = None) -> int:

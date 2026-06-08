@@ -68,6 +68,7 @@ class YouTubeSettings(BaseModel):
     privacy_status: str = "unlisted"
     category_id: str = "22"
     made_for_kids: bool = False
+    add_shorts_hashtag: bool = True
 
     @field_validator("privacy_status")
     @classmethod
@@ -80,6 +81,8 @@ class YouTubeSettings(BaseModel):
 
 class FacebookSettings(BaseModel):
     graph_api_version: str = "v25.0"
+    post_video: bool = True
+    post_reel: bool = True
 
 
 class AnthropicSettings(BaseModel):
