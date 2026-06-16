@@ -52,6 +52,10 @@ facebook:
   post_reel: true
   # Post a photo to the Page (the /photos edge) when the dropped file is an image.
   post_photo: true
+  # Stagger the two video formats: the Reel posts immediately; the Page video is
+  # uploaded now but SCHEDULED (Facebook publishes it) this many hours later.
+  # 24 = Reel now, Page video exactly 24h later. 0 = both immediately.
+  video_delay_hours: 24
 
 thumbnail:
   # Generate a branded custom YouTube thumbnail (sharpest frame + bold hook +

@@ -36,10 +36,19 @@ class FacebookUploadError(RuntimeError):
     """Raised when a Facebook upload fails."""
 
 
-def upload_video(cfg: Settings, local_path: Path, metadata: VideoMetadata) -> dict:
+def upload_video(
+    cfg: Settings,
+    local_path: Path,
+    metadata: VideoMetadata,
+    scheduled_publish_time: int | None = None,
+) -> dict:
     """
-    Upload a video to the Page. Returns {"video_id", "post_id"?}.
+    Upload a video to the Page. Returns {"video_id", "post_id"?, "scheduled_publish_time"?}.
     Raises FacebookUploadError on failure.
+
+    If scheduled_publish_time (a Unix timestamp) is given, the video is uploaded
+    now but NOT published — Facebook publishes it automatically at that time
+    (used to stagger the Page video behind the immediate Reel).
     """
     if cfg.facebook.graph_api_version != GRAPH_API_VERSION:
         logger.warning(
@@ -64,6 +73,14 @@ def upload_video(cfg: Settings, local_path: Path, metadata: VideoMetadata) -> di
         "description": metadata.facebook_text,
         "access_token": token,
     }
+    if scheduled_publish_time:
+        # Upload now, publish later: Facebook requires published=false + a Unix
+        # timestamp 10 min – 6 months in the future.
+        data["published"] = "false"
+        data["scheduled_publish_time"] = str(int(scheduled_publish_time))
+        logger.info(
+            "Page video will be SCHEDULED for %s (unix)", int(scheduled_publish_time)
+        )
 
     logger.info("Uploading to Facebook Page %s (%s)", page_id, GRAPH_API_VERSION)
     try:
@@ -85,5 +102,10 @@ def upload_video(cfg: Settings, local_path: Path, metadata: VideoMetadata) -> di
     video_id = body.get("id")
     if not video_id:
         raise FacebookUploadError(f"no video id in response: {body}")
-    logger.info("Facebook upload complete: video id %s", video_id)
-    return {"video_id": video_id, "post_id": body.get("post_id")}
+    when = "scheduled" if scheduled_publish_time else "published"
+    logger.info("Facebook video upload complete (%s): video id %s", when, video_id)
+    return {
+        "video_id": video_id,
+        "post_id": body.get("post_id"),
+        "scheduled_publish_time": int(scheduled_publish_time) if scheduled_publish_time else None,
+    }

@@ -82,10 +82,12 @@ def _enabled_targets(cfg: Settings, media_type: str = "video") -> list:
     if media_type == "photo":
         return ["facebook_photo"] if cfg.facebook.post_photo else []
     targets = ["youtube"]  # always on (privacy from config)
-    if cfg.facebook.post_video:
-        targets.append("facebook_video")
+    # Reel before video so the immediate Reel fires first; the Page video may be
+    # scheduled for later (facebook.video_delay_hours).
     if cfg.facebook.post_reel:
         targets.append("facebook_reel")
+    if cfg.facebook.post_video:
+        targets.append("facebook_video")
     return targets
 
 
@@ -178,7 +180,10 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
                         )
                     results[t] = {"ok": True, **yt}
                 elif t == "facebook_video":
-                    results[t] = {"ok": True, **facebook_upload.upload_video(cfg, local_path, meta)}
+                    sched = None
+                    if cfg.facebook.video_delay_hours > 0:
+                        sched = int(datetime.now(timezone.utc).timestamp()) + cfg.facebook.video_delay_hours * 3600
+                    results[t] = {"ok": True, **facebook_upload.upload_video(cfg, local_path, meta, scheduled_publish_time=sched)}
                 elif t == "facebook_reel":
                     results[t] = {"ok": True, **facebook_reels_upload.upload_reel(cfg, local_path, meta)}
                 elif t == "facebook_photo":

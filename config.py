@@ -85,6 +85,18 @@ class FacebookSettings(BaseModel):
     post_video: bool = True
     post_reel: bool = True
     post_photo: bool = True
+    # Delay (hours) before the Page VIDEO goes live, via Facebook's native
+    # scheduled publishing. The Reel always posts immediately. 0 = post the video
+    # immediately too. e.g. 24 = Reel now, Page video exactly 24h later.
+    video_delay_hours: int = 0
+
+    @field_validator("video_delay_hours")
+    @classmethod
+    def _valid_delay(cls, v: int) -> int:
+        # Facebook requires a scheduled time 10 min – 6 months out; keep within.
+        if v < 0 or v > 24 * 180:
+            raise ValueError("video_delay_hours must be between 0 and 4320 (180 days)")
+        return v
 
 
 class ThumbnailSettings(BaseModel):
