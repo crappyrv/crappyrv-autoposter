@@ -87,6 +87,19 @@ class FacebookSettings(BaseModel):
     post_photo: bool = True
 
 
+class ThumbnailSettings(BaseModel):
+    enabled: bool = True
+    style: str = "ink"
+
+    @field_validator("style")
+    @classmethod
+    def _valid_style(cls, v: str) -> str:
+        allowed = {"ink", "lemon", "red"}
+        if v not in allowed:
+            raise ValueError(f"thumbnail.style must be one of {allowed}, got {v!r}")
+        return v
+
+
 class AnthropicSettings(BaseModel):
     model: str
     max_tokens: int = 1500
@@ -127,6 +140,7 @@ class Settings(BaseModel):
     dropbox: DropboxSettings
     youtube: YouTubeSettings
     facebook: FacebookSettings
+    thumbnail: ThumbnailSettings
     anthropic: AnthropicSettings
     brand: BrandSettings
     metadata: MetadataSettings
@@ -189,6 +203,7 @@ def load_config() -> Settings:
         dropbox=DropboxSettings(**yaml_data.get("dropbox", {})),
         youtube=YouTubeSettings(**yaml_data.get("youtube", {})),
         facebook=FacebookSettings(**yaml_data.get("facebook", {})),
+        thumbnail=ThumbnailSettings(**yaml_data.get("thumbnail", {})),
         anthropic=AnthropicSettings(**yaml_data.get("anthropic", {})),
         brand=BrandSettings(**yaml_data.get("brand", {})),
         metadata=MetadataSettings(**yaml_data.get("metadata", {})),

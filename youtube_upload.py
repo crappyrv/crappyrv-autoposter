@@ -101,3 +101,26 @@ def upload_video(
     url = f"https://youtu.be/{video_id}"
     logger.info("YouTube upload complete: %s", url)
     return {"video_id": video_id, "url": url, "privacy_status": privacy_status}
+
+
+def set_thumbnail(cfg: Settings, video_id: str, thumb_path) -> bool:
+    """
+    Set a custom thumbnail on an uploaded video. Best-effort: returns False (and
+    logs) on failure rather than raising — a thumbnail problem must never undo a
+    successful upload. The youtube.upload scope is sufficient for thumbnails.set,
+    but the channel must be enabled for custom thumbnails (phone-verified).
+    """
+    from googleapiclient.http import MediaFileUpload
+
+    try:
+        youtube = build_youtube(cfg)
+        media = MediaFileUpload(str(thumb_path), mimetype="image/jpeg")
+        youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
+        logger.info("Custom thumbnail set on %s", video_id)
+        return True
+    except HttpError as exc:
+        logger.error("Could not set thumbnail on %s: %s", video_id, exc)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Thumbnail upload failed for %s: %s", video_id, exc)
+        return False

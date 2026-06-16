@@ -43,6 +43,7 @@ import dropbox_client as dbxc
 import facebook_upload
 import facebook_photo_upload
 import facebook_reels_upload
+import thumbnail
 import youtube_upload
 from config import Settings, load_config
 from metadata import MetadataError, validate_metadata
@@ -158,11 +159,24 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
         download_error = str(exc)
         logger.error("Download failed for %s: %s", pid, exc, exc_info=True)
 
+    # Generate the branded thumbnail once (video media only; best-effort).
+    thumb_path: Optional[Path] = None
+    if media_type == "video" and cfg.thumbnail.enabled and local_path is not None:
+        thumb_path = thumbnail.generate(
+            local_path, hook=meta.thumbnail_hook, sub=meta.thumbnail_sub,
+            style=cfg.thumbnail.style,
+        )
+
     if local_path is not None:
         for t in targets:
             try:
                 if t == "youtube":
-                    results[t] = {"ok": True, **youtube_upload.upload_video(cfg, local_path, meta, privacy)}
+                    yt = youtube_upload.upload_video(cfg, local_path, meta, privacy)
+                    if thumb_path is not None:
+                        yt["custom_thumbnail"] = youtube_upload.set_thumbnail(
+                            cfg, yt["video_id"], thumb_path
+                        )
+                    results[t] = {"ok": True, **yt}
                 elif t == "facebook_video":
                     results[t] = {"ok": True, **facebook_upload.upload_video(cfg, local_path, meta)}
                 elif t == "facebook_reel":
@@ -174,6 +188,8 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
                 logger.error("%s failed for %s: %s", t, pid, exc, exc_info=True)
         if local_path.exists():
             local_path.unlink()  # clean up the downloaded temp file
+    if thumb_path is not None and thumb_path.exists():
+        thumb_path.unlink()  # clean up the generated thumbnail temp file
 
     all_ok = bool(targets) and download_error is None and all(results[t]["ok"] for t in targets)
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -70,6 +71,11 @@ class VideoMetadata(BaseModel):
     description: str = Field(min_length=1)
     tags: List[str] = Field(default_factory=list)
     facebook_text: str = Field(min_length=1)
+    # Short bold hook for the branded YouTube thumbnail (2-4 words). Optional in
+    # the schema (older records lack it); a fallback derived from the title is
+    # applied deterministically after validation so it is never blank at render.
+    thumbnail_hook: str = ""
+    thumbnail_sub: str = ""
 
 
 # --- Prompt construction -----------------------------------------------------
@@ -128,9 +134,17 @@ def build_user_prompt(cfg: Settings, ctx: VideoContext) -> str:
         "natural call to follow/subscribe.\n"
         '  "tags"          : array of '
         f"up to {m.tags_max_count} short lower-case keyword strings (no '#').\n"
-        '  "facebook_text" : the Facebook post caption (can use #hashtags).\n\n'
+        '  "facebook_text" : the Facebook post caption (can use #hashtags).\n'
+        '  "thumbnail_hook": a punchy ALL-CAPS hook for the video thumbnail, '
+        "2-4 words, <= 18 characters, that would make someone stop scrolling "
+        "(no hashtags, no period).\n"
+        '  "thumbnail_sub" : an optional shorter supporting line for the '
+        "thumbnail (<= 30 chars), or an empty string.\n\n"
         "Constraints:\n"
         f"{hashtag_rule}"
+        "- The thumbnail hook must be true to the clip — do NOT invent a claim "
+        "you were not given; when unsure, use the brand stance, not a specific "
+        "fact.\n"
         "- Output ONLY the JSON object. No markdown, no commentary.\n"
     )
 
@@ -270,8 +284,23 @@ def _apply_required_hashtags(meta: VideoMetadata, cfg: Settings) -> VideoMetadat
             merged.append(t)
     merged = merged[: cfg.metadata.tags_max_count]
 
+    # Thumbnail hook fallback: never render a blank hook. Derive a short ALL-CAPS
+    # hook from the title (first few words, stop at punctuation) if the model
+    # left it empty.
+    hook = (meta.thumbnail_hook or "").strip()
+    if not hook:
+        base = re.split(r"[:\-–—|]", meta.title)[0].strip()
+        hook = " ".join(base.split()[:3]).upper()
+    sub = (meta.thumbnail_sub or "").strip()
+
     return meta.model_copy(
-        update={"facebook_text": fb, "description": desc, "tags": merged}
+        update={
+            "facebook_text": fb,
+            "description": desc,
+            "tags": merged,
+            "thumbnail_hook": hook,
+            "thumbnail_sub": sub,
+        }
     )
 
 

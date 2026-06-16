@@ -17,3 +17,8 @@ requests>=2.32
 python-dotenv>=1.0              # load .env
 pydantic>=2.7                   # typed settings + metadata schema validation
 PyYAML>=6.0                     # config.yaml parsing
+
+# --- Thumbnail generation ---
+Pillow>=10.0                    # compose the branded YouTube thumbnail
+imageio-ffmpeg>=0.5             # bundles a static ffmpeg binary (cross-platform
+                                # frame extraction; works on macOS + Linux CI)

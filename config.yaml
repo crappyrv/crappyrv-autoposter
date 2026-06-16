@@ -53,6 +53,14 @@ facebook:
   # Post a photo to the Page (the /photos edge) when the dropped file is an image.
   post_photo: true
 
+thumbnail:
+  # Generate a branded custom YouTube thumbnail (sharpest frame + bold hook +
+  # CRAPPYRV wordmark) instead of letting YouTube grab a random frame. Best-effort:
+  # if generation fails the video still posts with YouTube's default frame.
+  enabled: true
+  # Visual treatment: ink (dark panel, cream/gold text) | lemon (yellow) | red.
+  style: "ink"
+
 anthropic:
   # Model used for the single metadata-generation call.
   model: "claude-opus-4-8"
