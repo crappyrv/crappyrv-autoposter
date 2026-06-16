@@ -19,7 +19,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from config import Settings
-from metadata import VideoMetadata
+from metadata import VideoMetadata, YT_DESCRIPTION_MAX
 from youtube_auth import YOUTUBE_UPLOAD_SCOPE
 
 logger = logging.getLogger(__name__)

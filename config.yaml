@@ -18,6 +18,15 @@ dropbox:
     - ".m4v"
     - ".avi"
     - ".mkv"
+  # File extensions treated as photos (lowercase, with dot). A photo is posted
+  # to the Facebook Page only — YouTube has no photo-upload API, and there is no
+  # "photo reel". Drop a .jpg/.png in the watch folder and it posts like a video.
+  image_extensions:
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".gif"
+    - ".webp"
 
 youtube:
   # One of: private | unlisted | public
@@ -41,6 +50,8 @@ facebook:
   # ALSO post a Reel (the /video_reels 3-step flow). Reels need vertical 9:16,
   # ~3-90s clips; non-conforming videos are rejected by Facebook.
   post_reel: true
+  # Post a photo to the Page (the /photos edge) when the dropped file is an image.
+  post_photo: true
 
 anthropic:
   # Model used for the single metadata-generation call.

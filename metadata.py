@@ -51,11 +51,12 @@ class MetadataError(RuntimeError):
 
 @dataclass
 class VideoContext:
-    """What we know about a video before posting."""
+    """What we know about a piece of media before posting."""
 
     filename: str
     size_bytes: Optional[int] = None
     notes: Optional[str] = None  # optional human hint — the lever for quality
+    media_type: str = "video"    # "video" | "photo"
 
 
 class VideoMetadata(BaseModel):
@@ -92,12 +93,21 @@ def build_system_prompt(cfg: Settings) -> str:
 
 def build_user_prompt(cfg: Settings, ctx: VideoContext) -> str:
     m = cfg.metadata
-    known = [f"- filename: {ctx.filename}"]
+    known = [f"- media type: {ctx.media_type}", f"- filename: {ctx.filename}"]
     if ctx.size_bytes is not None:
         known.append(f"- size_bytes: {ctx.size_bytes}")
     if ctx.notes:
         known.append(f"- human note: {ctx.notes}")
     known_block = "\n".join(known)
+
+    media_note = (
+        "This is a STILL PHOTO (it will be posted to the Facebook Page photo "
+        "feed; the title/tags/description are unused, only facebook_text is "
+        "posted). Write the caption to suit a photo — do NOT say 'watch', "
+        "'clip', or 'video'.\n\n"
+        if ctx.media_type == "photo"
+        else ""
+    )
 
     hashtag_rule = (
         f'- "facebook_text" MUST include these hashtags: {" ".join(m.required_hashtags)}'
@@ -107,8 +117,9 @@ def build_user_prompt(cfg: Settings, ctx: VideoContext) -> str:
     )
 
     return (
-        "Known information about the video:\n"
+        "Known information about the media:\n"
         f"{known_block}\n\n"
+        f"{media_note}"
         "Produce a JSON object with EXACTLY these keys:\n"
         '  "title"         : YouTube title, 1 short compelling line, '
         f"<= {m.title_max_length} characters.\n"

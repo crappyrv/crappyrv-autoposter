@@ -57,8 +57,9 @@ class DropboxSettings(BaseModel):
     posted_folder: str
     failed_folder: str
     video_extensions: List[str]
+    image_extensions: List[str] = Field(default_factory=list)
 
-    @field_validator("video_extensions")
+    @field_validator("video_extensions", "image_extensions")
     @classmethod
     def _lowercase_extensions(cls, v: List[str]) -> List[str]:
         return [ext.lower() for ext in v]
@@ -83,6 +84,7 @@ class FacebookSettings(BaseModel):
     graph_api_version: str = "v25.0"
     post_video: bool = True
     post_reel: bool = True
+    post_photo: bool = True
 
 
 class AnthropicSettings(BaseModel):

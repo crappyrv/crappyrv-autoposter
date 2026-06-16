@@ -41,6 +41,7 @@ from typing import Optional
 
 import dropbox_client as dbxc
 import facebook_upload
+import facebook_photo_upload
 import facebook_reels_upload
 import youtube_upload
 from config import Settings, load_config
@@ -71,8 +72,14 @@ def _write_processed(cfg: Settings, pid: str, record: dict) -> Path:
     return path
 
 
-def _enabled_targets(cfg: Settings) -> list:
-    """Which destinations to post to, per config. Order = upload order."""
+def _enabled_targets(cfg: Settings, media_type: str = "video") -> list:
+    """Which destinations to post to, per config + media type. Order = upload order.
+
+    Photos go to the Facebook Page photo feed only — YouTube has no photo-upload
+    API and there is no photo reel.
+    """
+    if media_type == "photo":
+        return ["facebook_photo"] if cfg.facebook.post_photo else []
     targets = ["youtube"]  # always on (privacy from config)
     if cfg.facebook.post_video:
         targets.append("facebook_video")
@@ -109,6 +116,7 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
             f"{pending_path} and re-run."
         ) from exc
 
+    media_type = record.get("media_type", "video")
     dbx_info = record.get("dropbox", {})
     src_path = dbx_info.get("path_lower") or dbx_info.get("path")
     if not src_path:
@@ -126,8 +134,9 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
             exists = False
             logger.warning("[DRY-RUN] source not found at %s: %s", src_path, exc)
         logger.info("[DRY-RUN] pending %s is approved and metadata is valid.", pid)
+        logger.info("[DRY-RUN] media_type: %s", media_type)
         logger.info("[DRY-RUN] source exists: %s (%s)", exists, src_path)
-        for t in _enabled_targets(cfg):
+        for t in _enabled_targets(cfg, media_type):
             logger.info("[DRY-RUN] WOULD post to %s", t)
         logger.info("[DRY-RUN] title=%r | caption=%r", meta.title, meta.facebook_text)
         logger.info("[DRY-RUN] WOULD move source -> %s on full success (else %s)",
@@ -138,7 +147,7 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
         return 0
 
     # --- Real publish: run each enabled target; /posted only if ALL succeed ---
-    targets = _enabled_targets(cfg)
+    targets = _enabled_targets(cfg, media_type)
     results: dict = {t: {"ok": False} for t in targets}
     local_path: Optional[Path] = None
     download_error: Optional[str] = None
@@ -158,6 +167,8 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
                     results[t] = {"ok": True, **facebook_upload.upload_video(cfg, local_path, meta)}
                 elif t == "facebook_reel":
                     results[t] = {"ok": True, **facebook_reels_upload.upload_reel(cfg, local_path, meta)}
+                elif t == "facebook_photo":
+                    results[t] = {"ok": True, **facebook_photo_upload.upload_photo(cfg, local_path, meta)}
             except Exception as exc:  # one target failing must not stop the others
                 results[t] = {"ok": False, "error": str(exc)}
                 logger.error("%s failed for %s: %s", t, pid, exc, exc_info=True)

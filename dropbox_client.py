@@ -56,7 +56,11 @@ logger = logging.getLogger(__name__)
 # --- Data structures ---------------------------------------------------------
 @dataclass
 class VideoFile:
-    """A video file discovered in the watch folder."""
+    """A media file (video OR photo) discovered in the watch folder.
+
+    The class name is historical — it now carries either kind, distinguished by
+    `media_type` ("video" or "photo"). The downstream pipeline branches on it.
+    """
 
     name: str
     path_lower: str           # canonical Dropbox path (use this for ops)
@@ -66,6 +70,7 @@ class VideoFile:
     server_modified: datetime
     content_hash: str
     rev: str
+    media_type: str = "video"  # "video" | "photo"
 
 
 @dataclass
@@ -161,7 +166,21 @@ def _is_video(name: str, cfg: Settings) -> bool:
     return ext in cfg.dropbox.video_extensions
 
 
-def _to_video(entry: FileMetadata) -> VideoFile:
+def _is_image(name: str, cfg: Settings) -> bool:
+    ext = Path(name).suffix.lower()
+    return ext in cfg.dropbox.image_extensions
+
+
+def _media_type(name: str, cfg: Settings) -> Optional[str]:
+    """Return "video", "photo", or None if the file is neither."""
+    if _is_video(name, cfg):
+        return "video"
+    if _is_image(name, cfg):
+        return "photo"
+    return None
+
+
+def _to_video(entry: FileMetadata, media_type: str = "video") -> VideoFile:
     return VideoFile(
         name=entry.name,
         path_lower=entry.path_lower,
@@ -171,6 +190,7 @@ def _to_video(entry: FileMetadata) -> VideoFile:
         server_modified=entry.server_modified,
         content_hash=entry.content_hash,
         rev=entry.rev,
+        media_type=media_type,
     )
 
 
@@ -242,18 +262,20 @@ def list_new_videos(dbx: dropbox.Dropbox, cfg: Settings) -> ListResult:
 
 
 def _filter_videos(entries: list, cfg: Settings) -> List[VideoFile]:
-    """Keep only added/modified video FILES; skip folders and deletions."""
-    videos: List[VideoFile] = []
+    """Keep added/modified media FILES (videos AND photos); skip folders/deletions."""
+    media: List[VideoFile] = []
     for entry in entries:
         if isinstance(entry, DeletedMetadata):
             continue  # a delete event (e.g. our own move-out); not new content
         if isinstance(entry, FolderMetadata):
             continue
-        if isinstance(entry, FileMetadata) and _is_video(entry.name, cfg):
-            videos.append(_to_video(entry))
+        if isinstance(entry, FileMetadata):
+            kind = _media_type(entry.name, cfg)
+            if kind:
+                media.append(_to_video(entry, kind))
     # Stable, predictable order: oldest first.
-    videos.sort(key=lambda v: v.server_modified)
-    return videos
+    media.sort(key=lambda v: v.server_modified)
+    return media
 
 
 # --- Download ----------------------------------------------------------------

@@ -108,6 +108,7 @@ def build_pending_record(
         "id": pid,
         "status": "approved" if auto else "pending_review",
         "created_at": _now_iso(),
+        "media_type": video.media_type,
         "dropbox": {
             "path": video.path_display,
             "path_lower": video.path_lower,
@@ -157,7 +158,8 @@ def run(cfg: Settings, dry_run: bool) -> int:
         try:
             note = dbxc.read_sidecar_note(dbx, video.path_lower)
             ctx = VideoContext(
-                filename=video.name, size_bytes=video.size, notes=note
+                filename=video.name, size_bytes=video.size, notes=note,
+                media_type=video.media_type,
             )
             metadata = generate_metadata(cfg, ctx)
             pid = make_pending_id(video)
