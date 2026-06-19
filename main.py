@@ -122,6 +122,36 @@ def build_pending_record(
     }
 
 
+def write_skip_record(cfg: Settings, video: dbxc.VideoFile, pid: str) -> Path:
+    """Record a dormant-media skip so the file is deduped and never reprocessed.
+
+    Photos have no destination (Facebook was removed; YouTube has no photo API),
+    so we neither generate metadata (no LLM cost) nor publish them — we note the
+    skip in state/processed/ and leave the Dropbox source where it is.
+    """
+    record = {
+        "id": pid,
+        "status": "skipped",
+        "created_at": _now_iso(),
+        "media_type": video.media_type,
+        "dropbox": {
+            "path": video.path_display,
+            "path_lower": video.path_lower,
+            "file_id": video.id,
+            "content_hash": video.content_hash,
+            "size": video.size,
+        },
+        "reason": "photo posting is dormant (no destination configured)",
+    }
+    pdir = _processed_dir(cfg)
+    pdir.mkdir(parents=True, exist_ok=True)
+    path = pdir / f"{pid}.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)  # atomic
+    return path
+
+
 def write_pending_record(cfg: Settings, pid: str, record: dict) -> Path:
     pdir = _pending_dir(cfg)
     pdir.mkdir(parents=True, exist_ok=True)
@@ -152,10 +182,26 @@ def run(cfg: Settings, dry_run: bool) -> int:
     written = 0
     published = 0
     failures = 0
+    skipped = 0
     auto = cfg.run.auto_publish
 
     for video in to_process:
         try:
+            # Dormant media: photos have no destination (Facebook removed;
+            # YouTube has no photo API). Skip BEFORE the LLM call — record it so
+            # it's deduped, leave the source in place, spend nothing.
+            if video.media_type != "video":
+                pid = make_pending_id(video)
+                if dry_run:
+                    logger.info("[DRY-RUN] would skip %s %s (no destination).",
+                                video.media_type, video.name)
+                    continue
+                write_skip_record(cfg, video, pid)
+                skipped += 1
+                logger.info("Skipped %s %s (photo posting is dormant).",
+                            video.media_type, video.name)
+                continue
+
             note = dbxc.read_sidecar_note(dbx, video.path_lower)
             ctx = VideoContext(
                 filename=video.name, size_bytes=video.size, notes=note,
@@ -209,7 +255,7 @@ def run(cfg: Settings, dry_run: bool) -> int:
     )
     summary = (
         f"{mode}main.py [{'auto' if auto else 'gated'}]: {len(listing.videos)} found, "
-        f"{already} already-queued, {tail}, {deferred} deferred; "
+        f"{already} already-queued, {tail}, {skipped} skipped, {deferred} deferred; "
         f"cursor {'advanced' if cursor_committed else 'unchanged'}."
     )
     print(summary)

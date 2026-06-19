@@ -70,7 +70,11 @@ class VideoMetadata(BaseModel):
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
     tags: List[str] = Field(default_factory=list)
-    facebook_text: str = Field(min_length=1)
+    # A short, snarky-but-legal jab at Alliance RV that goes on EVERY post (David's
+    # standing ask). It MUST name "Alliance" and stay opinion/satire — never a
+    # false factual claim. Guaranteed present by validation; woven into the
+    # description deterministically after validation.
+    alliance_jab: str = Field(min_length=1)
     # Short bold hook for the branded YouTube thumbnail (2-4 words). Optional in
     # the schema (older records lack it); a fallback derived from the title is
     # applied deterministically after validation so it is never blank at render.
@@ -83,10 +87,20 @@ def build_system_prompt(cfg: Settings) -> str:
     b = cfg.brand
     rules = "\n".join(f"  - {r}" for r in b.rules) if b.rules else "  - (none)"
     return (
-        f"You write social-media posting metadata for the brand \"{b.name}\".\n\n"
+        f"You write YouTube posting metadata for the brand \"{b.name}\".\n\n"
         f"Brand: {b.description.strip()}\n\n"
         f"Voice: {b.voice.strip()}\n\n"
         f"Hard rules you MUST obey:\n{rules}\n\n"
+        "GOAL: maximize views, watch time, subscribers, and comments on YouTube "
+        "(including Shorts). Write titles that earn the click with curiosity, "
+        "stakes, or a relatable pain point — never clickbait you can't back up. "
+        "Descriptions should hook in the first line, then invite the viewer to "
+        "comment and subscribe.\n\n"
+        "ALLIANCE DIRECTIVE: every post must take a snarky, funny, smart shot at "
+        "Alliance RV (the 'alliance_jab' field). Keep it OPINION and SATIRE about "
+        "Alliance's documented quality reputation — sharp and quotable, but NEVER "
+        "a false statement of fact, a fabricated incident, or anything "
+        "defamatory. Riff on the brand's reputation, not invented specifics.\n\n"
         "You generate metadata for ONE video at a time. You will be given what is "
         "known about the video (often just a filename, sometimes a human note). "
         "If information is thin, write plausible, on-brand metadata that a human "
@@ -106,18 +120,10 @@ def build_user_prompt(cfg: Settings, ctx: VideoContext) -> str:
         known.append(f"- human note: {ctx.notes}")
     known_block = "\n".join(known)
 
-    media_note = (
-        "This is a STILL PHOTO (it will be posted to the Facebook Page photo "
-        "feed; the title/tags/description are unused, only facebook_text is "
-        "posted). Write the caption to suit a photo — do NOT say 'watch', "
-        "'clip', or 'video'.\n\n"
-        if ctx.media_type == "photo"
-        else ""
-    )
-
     hashtag_rule = (
-        f'- "facebook_text" MUST include these hashtags: {" ".join(m.required_hashtags)}'
-        " — and add more relevant ones too.\n"
+        "- Do NOT put hashtags in the description yourself — the brand hashtags "
+        f"({' '.join(m.required_hashtags)}) plus the subscribe/website links are "
+        "appended automatically AFTER your text, so keep the description clean.\n"
         if m.required_hashtags
         else ""
     )
@@ -125,16 +131,25 @@ def build_user_prompt(cfg: Settings, ctx: VideoContext) -> str:
     return (
         "Known information about the media:\n"
         f"{known_block}\n\n"
-        f"{media_note}"
         "Produce a JSON object with EXACTLY these keys:\n"
-        '  "title"         : YouTube title, 1 short compelling line, '
-        f"<= {m.title_max_length} characters.\n"
+        '  "title"         : YouTube title, 1 compelling line, '
+        f"<= {m.title_max_length} characters. Lead with the hook (curiosity, "
+        "stakes, or a relatable RV pain point); front-load the keywords people "
+        "actually search.\n"
         '  "description"   : YouTube description, '
-        f"<= {m.description_max_length} characters; a few sentences plus a "
-        "natural call to follow/subscribe.\n"
+        f"<= {m.description_max_length} characters. First line is a strong hook "
+        "(it shows above the fold). Then 2-4 sentences of context, then a "
+        "question that invites a comment (e.g. 'Has this happened to your rig?'). "
+        "Do NOT add a subscribe link or website link yourself — those are "
+        "appended automatically.\n"
         '  "tags"          : array of '
-        f"up to {m.tags_max_count} short lower-case keyword strings (no '#').\n"
-        '  "facebook_text" : the Facebook post caption (can use #hashtags).\n'
+        f"up to {m.tags_max_count} short lower-case keyword strings (no '#'); "
+        "mix broad ('rv', 'rv life', 'fifth wheel') with specific, searchable "
+        "terms relevant to the clip.\n"
+        '  "alliance_jab"  : one short, snarky, FUNNY, SMART line about Alliance '
+        "RV that names \"Alliance\". Opinion/satire about their quality "
+        "reputation only — NEVER a false statement of fact or a made-up "
+        "incident. 1 sentence, quotable.\n"
         '  "thumbnail_hook": a punchy ALL-CAPS hook for the video thumbnail, '
         "2-4 words, <= 18 characters, that would make someone stop scrolling "
         "(no hashtags, no period).\n"
@@ -142,9 +157,9 @@ def build_user_prompt(cfg: Settings, ctx: VideoContext) -> str:
         "thumbnail (<= 30 chars), or an empty string.\n\n"
         "Constraints:\n"
         f"{hashtag_rule}"
-        "- The thumbnail hook must be true to the clip — do NOT invent a claim "
-        "you were not given; when unsure, use the brand stance, not a specific "
-        "fact.\n"
+        "- The thumbnail hook and the Alliance jab must be true to the brand — do "
+        "NOT invent a specific claim you were not given; when unsure, use the "
+        "brand stance, not a fabricated fact.\n"
         "- Output ONLY the JSON object. No markdown, no commentary.\n"
     )
 
@@ -155,8 +170,8 @@ def _stricter_suffix(errors: List[str]) -> str:
         "\n\nYour previous response was REJECTED for these reasons:\n"
         f"{bullets}\n\n"
         "Return a corrected SINGLE JSON object with exactly the keys "
-        '"title", "description", "tags", "facebook_text" and nothing else. '
-        "No markdown fences, no commentary."
+        '"title", "description", "tags", "alliance_jab", "thumbnail_hook", '
+        '"thumbnail_sub" and nothing else. No markdown fences, no commentary.'
     )
 
 
@@ -244,6 +259,11 @@ def _validate_against_config(meta: VideoMetadata, cfg: Settings) -> List[str]:
             f"tags total {total_tag_chars} chars; keep under {YT_TAGS_TOTAL_CHARS_MAX}."
         )
 
+    # The Alliance jab must actually name Alliance (David's "every single time"
+    # rule). Funniness can't be validated, but presence + the brand can.
+    if "alliance" not in meta.alliance_jab.lower():
+        errors.append("alliance_jab must mention \"Alliance\" by name.")
+
     # Required hashtags are not checked here — they are GUARANTEED deterministically
     # by _apply_required_hashtags() after validation, so a missing one never fails
     # a post in full-auto mode.
@@ -253,30 +273,40 @@ def _validate_against_config(meta: VideoMetadata, cfg: Settings) -> List[str]:
 
 def _apply_required_hashtags(meta: VideoMetadata, cfg: Settings) -> VideoMetadata:
     """
-    Guarantee the configured hashtags appear on every post:
-      * appended to facebook_text (the caption) if missing
-      * appended to the YouTube description if missing (hashtags are clickable there)
-      * their keyword forms (no '#') added to the front of YouTube tags (so they
-        survive the tags cap), then existing tags fill the remainder
-    Deterministic post-processing — not LLM output — so it's safe to apply after
-    validation.
+    Deterministically assemble the final YouTube description and guarantee the
+    required content (not LLM output, so safe to apply after validation):
+
+      1. start with the AI description
+      2. append the snarky Alliance jab (if it isn't already in the text)
+      3. append the configured subscribe/website footer (cfg.youtube.description_footer)
+      4. append any required hashtags that are missing (clickable in descriptions)
+      5. YouTube keyword tags: required hashtags' keyword forms first (so the cap
+         can't drop them), then the model's tags, de-duplicated and capped
+      6. never render a blank thumbnail hook (derive one from the title)
     """
     req = cfg.metadata.required_hashtags or []
-    if not req:
-        return meta
-
-    fb = meta.facebook_text.rstrip()
-    miss_fb = [h for h in req if h.lower() not in fb.lower()]
-    if miss_fb:
-        fb = (fb + " " + " ".join(miss_fb)).strip()
 
     desc = meta.description.rstrip()
-    miss_desc = [h for h in req if h.lower() not in desc.lower()]
-    if miss_desc:
-        desc = (desc + "\n\n" + " ".join(miss_desc)).strip()
 
-    # YouTube keyword tags: required first (so the cap can't drop them), then the
-    # model's tags, de-duplicated, capped.
+    # 2. Alliance jab — guaranteed on every post. Skip if the model already wove
+    #    the exact line into the description.
+    jab = (meta.alliance_jab or "").strip()
+    if jab and jab.lower() not in desc.lower():
+        desc = (desc + "\n\n" + jab).rstrip()
+
+    # 3. Subscribe + website footer.
+    footer = (cfg.youtube.description_footer or "").strip()
+    if footer and footer not in desc:
+        desc = (desc + "\n\n" + footer).rstrip()
+
+    # 4. Required hashtags.
+    if req:
+        miss_desc = [h for h in req if h.lower() not in desc.lower()]
+        if miss_desc:
+            desc = (desc + "\n\n" + " ".join(miss_desc)).strip()
+
+    # 5. YouTube keyword tags: required first (so the cap can't drop them), then
+    #    the model's tags, de-duplicated, capped.
     keywords = [h.lstrip("#").lower() for h in req if h.lstrip("#")]
     merged: List[str] = []
     for t in keywords + list(meta.tags):
@@ -284,9 +314,8 @@ def _apply_required_hashtags(meta: VideoMetadata, cfg: Settings) -> VideoMetadat
             merged.append(t)
     merged = merged[: cfg.metadata.tags_max_count]
 
-    # Thumbnail hook fallback: never render a blank hook. Derive a short ALL-CAPS
-    # hook from the title (first few words, stop at punctuation) if the model
-    # left it empty.
+    # 6. Thumbnail hook fallback: never render a blank hook. Derive a short
+    #    ALL-CAPS hook from the title (first few words, stop at punctuation).
     hook = (meta.thumbnail_hook or "").strip()
     if not hook:
         base = re.split(r"[:\-–—|]", meta.title)[0].strip()
@@ -295,7 +324,6 @@ def _apply_required_hashtags(meta: VideoMetadata, cfg: Settings) -> VideoMetadat
 
     return meta.model_copy(
         update={
-            "facebook_text": fb,
             "description": desc,
             "tags": merged,
             "thumbnail_hook": hook,

@@ -47,9 +47,6 @@ class Secrets(BaseModel):
     youtube_client_secret: SecretStr
     youtube_refresh_token: SecretStr
 
-    facebook_page_id: str  # not secret per se, but lives in .env for convenience
-    facebook_page_access_token: SecretStr
-
 
 # --- Non-secret settings (from config.yaml) ----------------------------------
 class DropboxSettings(BaseModel):
@@ -70,6 +67,11 @@ class YouTubeSettings(BaseModel):
     category_id: str = "22"
     made_for_kids: bool = False
     add_shorts_hashtag: bool = True
+    # Deterministic block appended to EVERY YouTube description (after the AI
+    # text + the snarky Alliance line, before the required hashtags). This is the
+    # subscribe CTA + crappyrv.com funnel — the in-code lever for subs + revenue.
+    # Edit freely; "" disables it.
+    description_footer: str = ""
 
     @field_validator("privacy_status")
     @classmethod
@@ -77,25 +79,6 @@ class YouTubeSettings(BaseModel):
         allowed = {"private", "unlisted", "public"}
         if v not in allowed:
             raise ValueError(f"privacy_status must be one of {allowed}, got {v!r}")
-        return v
-
-
-class FacebookSettings(BaseModel):
-    graph_api_version: str = "v25.0"
-    post_video: bool = True
-    post_reel: bool = True
-    post_photo: bool = True
-    # Delay (hours) before the Page VIDEO goes live, via Facebook's native
-    # scheduled publishing. The Reel always posts immediately. 0 = post the video
-    # immediately too. e.g. 24 = Reel now, Page video exactly 24h later.
-    video_delay_hours: int = 0
-
-    @field_validator("video_delay_hours")
-    @classmethod
-    def _valid_delay(cls, v: int) -> int:
-        # Facebook requires a scheduled time 10 min – 6 months out; keep within.
-        if v < 0 or v > 24 * 180:
-            raise ValueError("video_delay_hours must be between 0 and 4320 (180 days)")
         return v
 
 
@@ -151,7 +134,6 @@ class Settings(BaseModel):
     secrets: Secrets
     dropbox: DropboxSettings
     youtube: YouTubeSettings
-    facebook: FacebookSettings
     thumbnail: ThumbnailSettings
     anthropic: AnthropicSettings
     brand: BrandSettings
@@ -184,8 +166,6 @@ def _load_secrets() -> Secrets:
         youtube_client_id=_require_env("YOUTUBE_CLIENT_ID"),
         youtube_client_secret=_require_env("YOUTUBE_CLIENT_SECRET"),
         youtube_refresh_token=_require_env("YOUTUBE_REFRESH_TOKEN"),
-        facebook_page_id=_require_env("FACEBOOK_PAGE_ID"),
-        facebook_page_access_token=_require_env("FACEBOOK_PAGE_ACCESS_TOKEN"),
     )
 
 
@@ -214,7 +194,6 @@ def load_config() -> Settings:
         secrets=_load_secrets(),
         dropbox=DropboxSettings(**yaml_data.get("dropbox", {})),
         youtube=YouTubeSettings(**yaml_data.get("youtube", {})),
-        facebook=FacebookSettings(**yaml_data.get("facebook", {})),
         thumbnail=ThumbnailSettings(**yaml_data.get("thumbnail", {})),
         anthropic=AnthropicSettings(**yaml_data.get("anthropic", {})),
         brand=BrandSettings(**yaml_data.get("brand", {})),
@@ -255,12 +234,11 @@ if __name__ == "__main__":
     print(f"  posted_folder     : {cfg.dropbox.posted_folder}")
     print(f"  failed_folder     : {cfg.dropbox.failed_folder}")
     print(f"  yt privacy_status : {cfg.youtube.privacy_status}")
-    print(f"  graph_api_version : {cfg.facebook.graph_api_version}")
     print(f"  anthropic model   : {cfg.anthropic.model}")
     print("  secrets present   : "
           + ", ".join(
               k for k in (
                   "anthropic_api_key", "dropbox_refresh_token",
-                  "youtube_refresh_token", "facebook_page_access_token",
+                  "youtube_refresh_token",
               )
           ))

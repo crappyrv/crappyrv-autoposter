@@ -18,9 +18,11 @@ dropbox:
     - ".m4v"
     - ".avi"
     - ".mkv"
-  # File extensions treated as photos (lowercase, with dot). A photo is posted
-  # to the Facebook Page only — YouTube has no photo-upload API, and there is no
-  # "photo reel". Drop a .jpg/.png in the watch folder and it posts like a video.
+  # File extensions treated as photos (lowercase, with dot). Photo posting is
+  # DORMANT: YouTube has no photo-upload API and Facebook (the old photo target)
+  # was removed. The pipeline still RECOGNIZES photos and sets them aside
+  # cleanly (logged + recorded, source left in place) instead of choking — so a
+  # photo destination (e.g. Instagram) can be wired back in later.
   image_extensions:
     - ".jpg"
     - ".jpeg"
@@ -40,22 +42,17 @@ youtube:
   # classify as YouTube Shorts. (One upload = one video; YouTube decides
   # Short-vs-regular by format, so there is no separate "post a Short" call.)
   add_shorts_hashtag: true
+  # Appended to EVERY description (after the AI text + the snarky Alliance line,
+  # before the required hashtags). The subscribe CTA + crappyrv.com funnel that
+  # turns views into subscribers and revenue. The subscribe link uses
+  # ?sub_confirmation=1 so it pops the one-click "Subscribe?" dialog.
+  description_footer: |-
+    ──────────────────────
+    ▶ SUBSCRIBE — help us make the RV industry impossible to ignore:
+    https://www.youtube.com/@crappyrv?sub_confirmation=1
 
-facebook:
-  # Graph API version is ALSO pinned as a constant in code; this mirrors it so
-  # it is visible/overridable in config. Keep both in sync.
-  graph_api_version: "v25.0"
-  # Post a regular Page video (the /videos edge).
-  post_video: true
-  # ALSO post a Reel (the /video_reels 3-step flow). Reels need vertical 9:16,
-  # ~3-90s clips; non-conforming videos are rejected by Facebook.
-  post_reel: true
-  # Post a photo to the Page (the /photos edge) when the dropped file is an image.
-  post_photo: true
-  # Stagger the two video formats: the Reel posts immediately; the Page video is
-  # uploaded now but SCHEDULED (Facebook publishes it) this many hours later.
-  # 24 = Reel now, Page video exactly 24h later. 0 = both immediately.
-  video_delay_hours: 24
+    🌐 Recalls tracker, the Yikes board & free buyer's guides:
+    https://crappyrv.com
 
 thumbnail:
   # Generate a branded custom YouTube thumbnail (sharpest frame + bold hook +

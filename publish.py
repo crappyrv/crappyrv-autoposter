@@ -8,8 +8,8 @@ Steps:
     1. load state/pending/<id>.json; require "status": "approved"
     2. re-validate the (possibly human-edited) metadata — never publish invalid
     3. download the source video from Dropbox
-    4. upload to YouTube AND Facebook
-    5. move the Dropbox source to /posted ONLY if BOTH uploads succeed;
+    4. upload to YouTube
+    5. move the Dropbox source to /posted ONLY if the upload succeeds;
        otherwise move it to /failed and notify()
     6. record the outcome to state/processed/<id>.json and remove the pending file
 
@@ -17,9 +17,9 @@ Failure semantics (deliberate, per spec):
     * approval/validation problems  -> stop, leave everything as-is so you can fix
       and retry (NOT moved to /failed; nothing was published)
     * upload-phase failure          -> move source to /failed, write a processed
-      record, remove pending, notify. (No auto-retry — a human decides.) If
-      YouTube succeeded but Facebook failed, the processed record + notification
-      say so explicitly (the YouTube video exists, unlisted by default).
+      record, remove pending, notify. (No auto-retry — a human decides.)
+    * dormant media type (no target, e.g. a photo) -> clean SKIP: record it and
+      remove the pending file, but leave the source untouched (never /failed).
     * We always write a processed record and remove the pending file after an
       upload ATTEMPT, so a video is never re-published by a later run.
 
@@ -40,9 +40,6 @@ from pathlib import Path
 from typing import Optional
 
 import dropbox_client as dbxc
-import facebook_upload
-import facebook_photo_upload
-import facebook_reels_upload
 import thumbnail
 import youtube_upload
 from config import Settings, load_config
@@ -74,21 +71,15 @@ def _write_processed(cfg: Settings, pid: str, record: dict) -> Path:
 
 
 def _enabled_targets(cfg: Settings, media_type: str = "video") -> list:
-    """Which destinations to post to, per config + media type. Order = upload order.
+    """Which destinations to post to, per media type. YouTube only.
 
-    Photos go to the Facebook Page photo feed only — YouTube has no photo-upload
-    API and there is no photo reel.
+    Photo posting is dormant — there is no photo destination (YouTube has no
+    photo-upload API; Facebook was removed), so photos yield an empty target
+    list and are handled as a clean skip by the caller.
     """
     if media_type == "photo":
-        return ["facebook_photo"] if cfg.facebook.post_photo else []
-    targets = ["youtube"]  # always on (privacy from config)
-    # Reel before video so the immediate Reel fires first; the Page video may be
-    # scheduled for later (facebook.video_delay_hours).
-    if cfg.facebook.post_reel:
-        targets.append("facebook_reel")
-    if cfg.facebook.post_video:
-        targets.append("facebook_video")
-    return targets
+        return []
+    return ["youtube"]
 
 
 # --- The publish run ---------------------------------------------------------
@@ -141,7 +132,7 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
         logger.info("[DRY-RUN] source exists: %s (%s)", exists, src_path)
         for t in _enabled_targets(cfg, media_type):
             logger.info("[DRY-RUN] WOULD post to %s", t)
-        logger.info("[DRY-RUN] title=%r | caption=%r", meta.title, meta.facebook_text)
+        logger.info("[DRY-RUN] title=%r | alliance_jab=%r", meta.title, meta.alliance_jab)
         logger.info("[DRY-RUN] WOULD move source -> %s on full success (else %s)",
                     cfg.dropbox.posted_folder, cfg.dropbox.failed_folder)
         summary = f"DRY-RUN publish.py: {pid} ready to publish (no actions taken)."
@@ -151,6 +142,36 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
 
     # --- Real publish: run each enabled target; /posted only if ALL succeed ---
     targets = _enabled_targets(cfg, media_type)
+
+    # Dormant media type (e.g. a photo, now that Facebook is removed): no
+    # destination exists. Record a clean skip and remove the pending file so it
+    # is not reprocessed — but DON'T download, publish, or move/lose the source.
+    if not targets:
+        logger.info(
+            "No enabled targets for media_type=%r; skipping %s (source left in place).",
+            media_type, pid,
+        )
+        processed = {
+            "id": pid,
+            "status": "skipped",
+            "published_at": _now_iso(),
+            "dropbox": {**dbx_info, "final_path": None, "move_error": None},
+            "results": {},
+            "download_error": None,
+            "metadata": meta.model_dump(),
+        }
+        _write_processed(cfg, pid, processed)
+        pending_path.unlink(missing_ok=True)
+        notify(
+            f"Skipped {pid}: media_type={media_type!r} has no destination "
+            f"(photo posting is dormant). Source left at {src_path}.",
+            level="INFO",
+        )
+        summary = f"publish.py: {pid} -> SKIPPED (no targets for media_type={media_type!r})."
+        print(summary)
+        logger.info(summary)
+        return 0
+
     results: dict = {t: {"ok": False} for t in targets}
     local_path: Optional[Path] = None
     download_error: Optional[str] = None
@@ -179,15 +200,6 @@ def run(cfg: Settings, pid: str, dry_run: bool) -> int:
                             cfg, yt["video_id"], thumb_path
                         )
                     results[t] = {"ok": True, **yt}
-                elif t == "facebook_video":
-                    sched = None
-                    if cfg.facebook.video_delay_hours > 0:
-                        sched = int(datetime.now(timezone.utc).timestamp()) + cfg.facebook.video_delay_hours * 3600
-                    results[t] = {"ok": True, **facebook_upload.upload_video(cfg, local_path, meta, scheduled_publish_time=sched)}
-                elif t == "facebook_reel":
-                    results[t] = {"ok": True, **facebook_reels_upload.upload_reel(cfg, local_path, meta)}
-                elif t == "facebook_photo":
-                    results[t] = {"ok": True, **facebook_photo_upload.upload_photo(cfg, local_path, meta)}
             except Exception as exc:  # one target failing must not stop the others
                 results[t] = {"ok": False, "error": str(exc)}
                 logger.error("%s failed for %s: %s", t, pid, exc, exc_info=True)

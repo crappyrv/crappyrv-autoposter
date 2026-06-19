@@ -3,11 +3,13 @@
 This project never creates credentials for you. You get them once, paste them
 into `.env` (copy from `.env.example`), and the app reads them from there.
 
-There are **four** providers. Work through them top to bottom. Each ends with the
+There are **three** providers. Work through them top to bottom. Each ends with the
 exact `.env` keys it fills.
 
-> Time budget: Dropbox ~10 min · YouTube ~20 min · Anthropic ~2 min ·
-> Facebook ~30 min+ (App Review/Business Verification can take days — see note).
+> Time budget: Dropbox ~10 min · YouTube ~20 min · Anthropic ~2 min.
+>
+> Facebook was removed from this poster (it was suppressing the FB algorithm),
+> so there are no more Meta/Graph credentials to provision.
 
 ---
 
@@ -129,67 +131,6 @@ prints the refresh token to paste here:
 ```
 YOUTUBE_REFRESH_TOKEN=<...>
 ```
-
----
-
-## 4. Facebook Page (Meta Graph API)
-
-Fills: `FACEBOOK_PAGE_ID`, `FACEBOOK_PAGE_ACCESS_TOKEN`
-
-> **Must be a Page, not a personal profile.** You can only post to a Page you
-> manage with an admin/content role.
-
-### 4a. Create a Meta app
-1. Go to <https://developers.facebook.com/apps/> → **Create app**.
-2. Use case: **Other** → type **Business** → name it → create.
-3. Note the **App ID** / **App secret** (App secret under **Settings → Basic**).
-
-### 4b. Get a Page access token with the right scopes
-Using the **Graph API Explorer** (<https://developers.facebook.com/tools/explorer/>):
-1. Select your app (top right).
-2. **Get token → Get Page Access Token**, pick your Page.
-3. Add these permissions and re-generate the token:
-   - `pages_manage_posts`
-   - `pages_read_engagement`
-   - `pages_show_list`
-4. Click **Generate Access Token** and approve.
-
-### 4c. Find the Page ID
-- On the Page: **About** / **Page transparency**, or
-- In Graph API Explorer call `GET /me/accounts` — each entry has the Page `id`
-  and a per-Page `access_token`.
-
-```
-FACEBOOK_PAGE_ID=<numeric page id>
-```
-
-### 4d. Exchange for a LONG-LIVED Page token
-The Explorer token is short-lived (~1–2 hours). Convert it:
-1. Get a long-lived **user** token:
-   ```
-   GET https://graph.facebook.com/v25.0/oauth/access_token
-       ?grant_type=fb_exchange_token
-       &client_id=<APP_ID>
-       &client_secret=<APP_SECRET>
-       &fb_exchange_token=<SHORT_LIVED_USER_TOKEN>
-   ```
-2. Call `GET /me/accounts` with that long-lived user token; the Page entry's
-   `access_token` is now a **long-lived Page token** (effectively non-expiring
-   while permissions hold).
-
-```
-FACEBOOK_PAGE_ACCESS_TOKEN=<long-lived page token>
-```
-
-### 4e. Production note (READ THIS)
-- While the app is in **Development** mode, the token works **only** for Pages
-  you (an app admin/dev/tester) manage. That is fine for testing this project.
-- To post on behalf of any other Page / go fully live, Meta requires
-  **App Review** for the `pages_manage_posts` permission **and Business
-  Verification** of your business. These can take **several days** and are a
-  prerequisite for production use. Plan for it.
-- Always pin the Graph API version (`v25.0`) — the code does this via a constant
-  in every call.
 
 ---
 

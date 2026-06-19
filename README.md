@@ -1,12 +1,13 @@
 # Video Auto-Poster
 
 A scheduled worker that watches one Dropbox folder for new video files and, for
-each new video: generates posting metadata, lets you approve it, uploads the
-video to YouTube and to a Facebook Page, then moves the source file to a
-`/posted` folder.
+each new video: generates engagement-optimized YouTube metadata (including a
+snarky Alliance jab + a subscribe/website CTA), optionally lets you approve it,
+uploads the video to YouTube, then moves the source file to a `/posted` folder.
 
-> **Status: scaffold only (Step 1).** The plumbing modules are stubs — we build
-> and test them one at a time in later steps. Nothing publishes yet.
+> **YouTube-only.** Facebook posting was removed (it was suppressing the FB
+> algorithm). Photo handling is dormant: photos are recognized and set aside
+> cleanly (no destination), so a new photo target can be wired in later.
 
 ---
 
@@ -16,20 +17,19 @@ video to YouTube and to a Facebook Page, then moves the source file to a
   invocation does one pass and exits.
 - **Two stages, two commands, with a human approval gate between them:**
   1. `python main.py` — find new videos → generate metadata → write a pending
-     review file → **STOP**. Never publishes.
+     review file (or, in `auto_publish` mode, publish immediately).
   2. `python publish.py <pending-id>` — take an **approved** pending item →
-     upload to YouTube **and** Facebook → move the Dropbox source.
+     upload to YouTube → move the Dropbox source.
 - **Only one LLM call:** metadata generation (Anthropic). Everything else
-  (Dropbox, YouTube, Facebook) is deterministic code.
-- **Move semantics:** source → `/posted` **only after BOTH uploads succeed**;
-  otherwise → `/failed` + notify. A processed file is never left in the watch
-  folder and never silently lost.
+  (Dropbox, YouTube) is deterministic code.
+- **Move semantics:** source → `/posted` **only after the upload succeeds**;
+  otherwise → `/failed` + notify. A dormant media type (e.g. a photo, with no
+  destination) is a clean SKIP — recorded, source left in place. A processed
+  file is never left in the watch folder and never silently lost.
 - **Fail loud:** rotating log file, one-line stdout run summary, non-zero exit on
   failure.
-- **`--dry-run`** does everything except the real uploads and the move.
-- **Safety defaults:** YouTube `privacyStatus` defaults to `unlisted`
-  (config-driven). The Graph API version is pinned (`v25.0`) in every Facebook
-  call.
+- **`--dry-run`** does everything except the real upload and the move.
+- **Safety defaults:** YouTube `privacyStatus` is config-driven.
 
 ---
 
@@ -44,9 +44,9 @@ config.py                # loads .env + config.yaml -> one typed Settings object
 notify.py                # notify() hook (print+log now; email/Slack later)         [stub]
 dropbox_client.py        # auth, list-new (cursor), download, move                  [stub]
 metadata.py              # Anthropic call -> validated JSON metadata                 [stub]
-youtube_auth.py          # one-time: mint a YouTube OAuth refresh token             [stub]
-youtube_upload.py        # resumable upload using the refresh token                 [stub]
-facebook_upload.py       # post video to a Page (Graph version pinned)              [stub]
+youtube_auth.py          # one-time: mint a YouTube OAuth refresh token
+youtube_upload.py        # resumable upload + custom thumbnail using the refresh token
+thumbnail.py             # branded custom YouTube thumbnail (sharpest frame + hook)
 state/
   pending/               # pending review files written by main.py
   processed/             # result records written by publish.py
@@ -81,12 +81,10 @@ python config.py
 ## Credentials
 
 All secrets come from `.env`. See **[CREDENTIALS.md](CREDENTIALS.md)** for exact
-step-by-step instructions for Anthropic, Dropbox, YouTube, and Facebook —
-including two gotchas that will bite later:
+step-by-step instructions for Anthropic, Dropbox, and YouTube — including the
+gotcha that will bite later:
 - YouTube: the OAuth consent screen **must be "In production"** or the refresh
   token expires in 7 days.
-- Facebook: **App Review + Business Verification** are required before production
-  use beyond your own Pages.
 
 ---
 
@@ -114,19 +112,16 @@ Publishing stays manual: you review the pending file, then run `publish.py`.
 
 ---
 
-## Build order (what comes next)
+## Status
 
-We build and test one module at a time, in this order:
-1. ✅ Scaffold
-2. ✅ `config.py` + `notify.py` (notify + centralized logging)
-3. ✅ `dropbox_client.py` (list-new with cursor, download, move, sidecar) — live-tested
-4. ✅ `metadata.py` (Anthropic → validated JSON) — live-tested
-5. ✅ `dropbox_auth.py` (mint Dropbox refresh token) — used
-6. ✅ `main.py` (Stage 1: poll → metadata → pending) — live-tested
-7. ✅ `youtube_auth.py` / `youtube_upload.py` / `facebook_upload.py` — built; need creds to live-test
-8. ✅ `publish.py` (Stage 2) — gates + dry-run tested; upload path needs YouTube/Facebook creds
+Live on GitHub Actions (cron every 30 min + manual `workflow_dispatch`),
+YouTube-only, in `auto_publish` mode. Pipeline modules:
+- `config.py` + `notify.py` — typed config + centralized logging
+- `dropbox_client.py` — list-new (cursor), download, move, sidecar notes
+- `metadata.py` — the single Anthropic call → validated, engagement-tuned metadata
+- `main.py` (Stage 1) / `publish.py` (Stage 2)
+- `youtube_auth.py` / `youtube_upload.py` / `thumbnail.py` — upload + branded thumbnail
 
-Remaining to go fully live:
-- Provision **YouTube** creds (Google Cloud project → Desktop OAuth client → `python youtube_auth.py`)
-- Provision **Facebook** creds (Meta app → long-lived Page token)
-- One real end-to-end publish
+> Facebook removed 2026-06-19 (it was suppressing the FB algorithm). If you ever
+> add a new destination (e.g. Instagram for photos), wire it into
+> `publish._enabled_targets` and the publish loop.
