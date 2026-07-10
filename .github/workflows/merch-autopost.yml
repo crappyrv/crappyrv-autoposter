@@ -1,0 +1,47 @@
+name: merch-autoposter
+
+# Watches the Dropbox "/CrappyRV Merch Drop" folders and turns new PNGs into
+# Printify products -> Etsy DRAFT listings. Independent of the video poster.
+#
+# Schedule note: GitHub cron is UTC. 14:00-01:59 UTC ~= 10:00am-9:59pm US Eastern
+# (EDT). In winter (EST) that window reads 9am-9pm ET — close enough; drafts are
+# harmless whenever they land. Every 30 min = up to a ~30-min wait after a drop.
+#
+# Free-minutes note: each run bills 1 minute minimum. If this repo is PRIVATE and
+# you bump into the 2,000-min/mo free cap, either make the repo public (unlimited
+# Actions minutes; no secrets live in the code — they're encrypted repo secrets)
+# or widen the cron interval to hourly.
+on:
+  schedule:
+    - cron: "*/30 14-23,0-1 * * *"
+  workflow_dispatch: {}   # "Run workflow" button for instant posting on demand
+
+permissions:
+  contents: read
+
+concurrency:
+  group: merch-autopost
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run merch auto-poster (one pass)
+        env:
+          ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+          DROPBOX_APP_KEY:       ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET:    ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          PRINTIFY_API_TOKEN:    ${{ secrets.PRINTIFY_API_TOKEN }}
+          PRINTIFY_SHOP_ID:      ${{ secrets.PRINTIFY_SHOP_ID }}
+          NTFY_TOPIC:            ${{ secrets.NTFY_TOPIC }}
+        run: python merch/main.py

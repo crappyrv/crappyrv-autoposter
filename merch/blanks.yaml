@@ -1,0 +1,58 @@
+# =============================================================================
+# Merch blanks config — maps each Dropbox drop-folder (a "product type") to the
+# Printify blank it becomes, plus how to prep the print file.
+#
+# ROUTING: the folder a PNG is dropped into IS the product type.
+#   /CrappyRV Merch Drop/Shirts        -> "shirts"
+#   /CrappyRV Merch Drop/Mugs          -> "mugs"
+#   /CrappyRV Merch Drop/Garden Flags  -> "garden_flags"
+#
+# Printify product model: blueprint_id (product type) + print_provider_id (who
+# prints it) + variant ids (color/size). IDs discovered live 2026-07-09 for the
+# Etsy store (shop 11022470). To add a product type: add a block, run
+# discover_blanks.py to get the ids, and create the Dropbox folder.
+# =============================================================================
+
+drop_root: "/CrappyRV Merch Drop"
+printfiles_folder: "/CrappyRV Merch Drop/_printfiles"
+done_folder:   "/CrappyRV Merch Drop/_done"
+failed_folder: "/CrappyRV Merch Drop/_failed"
+image_extensions: [".png", ".jpg", ".jpeg", ".webp"]
+
+product_types:
+
+  shirts:
+    folder: "Shirts"
+    blueprint_id: 12            # Bella+Canvas Unisex Jersey Short Sleeve Tee (3001)
+    print_provider_id: 29       # Monster Digital (top-rated US DTG)
+    blank_label: "Unisex t-shirt (Bella+Canvas 3001)"
+    print_position: "front"
+    placeholder_px: [3319, 3761]
+    remove_background: true
+    retail_price: "26.99"
+    # Garment color auto-picked from the design's own colors:
+    #   light/white art -> BLACK tees   |   dark/black art -> WHITE tees
+    variant_ids_for_light_art: [18100, 18101, 18102, 18103, 18104, 18105]  # Black S-3XL
+    variant_ids_for_dark_art:  [18540, 18541, 18542, 18543, 18544, 18545]  # White S-3XL
+
+  mugs:
+    folder: "Mugs"
+    blueprint_id: 68            # Mug 11oz
+    print_provider_id: 1        # SPOKE Custom Products
+    blank_label: "White 11oz mug"
+    print_position: "front"
+    placeholder_px: [2700, 1120]
+    remove_background: true
+    retail_price: "16.99"
+    variant_ids: [33719]        # 11oz
+
+  garden_flags:
+    folder: "Garden Flags"
+    blueprint_id: 917           # Garden Banner
+    print_provider_id: 14       # ArtsAdd
+    blank_label: "Garden flag (12\"x18\")"
+    print_position: "front"
+    placeholder_px: [3718, 5518]
+    remove_background: true      # design centered on the white flag; never crops the joke
+    retail_price: "24.99"
+    variant_ids: [77943]        # 12"x18"
