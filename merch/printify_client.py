@@ -9,9 +9,16 @@ Flow: upload_image(url) -> create_product(...) -> publish_product(id).
 Printify requires a User-Agent header on every request.
 """
 from __future__ import annotations
+import time
 import requests
 
 BASE = "https://api.printify.com/v1"
+
+# Transient-error retry policy: a momentary blip (network, 5xx, rate-limit) must
+# never strand a design in _failed — it retries within the same run until it works.
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_MAX_ATTEMPTS = 5
+_BACKOFF = [2, 4, 8, 16]  # seconds between attempts
 
 
 class PrintifyError(RuntimeError):
@@ -29,11 +36,23 @@ class PrintifyClient:
                 "User-Agent": "CrappyRV-Merch-Autoposter/1.0"}
 
     def _req(self, method: str, path: str, **kw) -> dict:
-        r = requests.request(method, BASE + path, headers=self._headers(),
-                             timeout=self.timeout, **kw)
-        if r.status_code >= 400:
-            raise PrintifyError(f"HTTP {r.status_code} on {method} {path}: {r.text[:400]}")
-        return r.json() if r.text else {}
+        last_err = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                r = requests.request(method, BASE + path, headers=self._headers(),
+                                     timeout=self.timeout, **kw)
+            except requests.RequestException as e:
+                last_err = f"network error on {method} {path}: {e}"
+            else:
+                if r.status_code < 400:
+                    return r.json() if r.text else {}
+                if r.status_code not in _RETRY_STATUSES:
+                    # A permanent error (bad request, auth, etc.) — don't retry.
+                    raise PrintifyError(f"HTTP {r.status_code} on {method} {path}: {r.text[:400]}")
+                last_err = f"HTTP {r.status_code} on {method} {path}: {r.text[:200]}"
+            if attempt < _MAX_ATTEMPTS - 1:
+                time.sleep(_BACKOFF[attempt])
+        raise PrintifyError(f"gave up after {_MAX_ATTEMPTS} attempts — {last_err}")
 
     # ---- steps ----
     def upload_image(self, file_name: str, url: str) -> str:

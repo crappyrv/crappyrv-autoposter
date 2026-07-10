@@ -80,7 +80,8 @@ def _coerce(data: dict) -> Listing:
 
 
 def generate(anthropic_key: str, phrase: str, blank_label: str) -> Listing:
-    client = anthropic.Anthropic(api_key=anthropic_key)
+    # max_retries so a transient API blip self-corrects instead of failing the run.
+    client = anthropic.Anthropic(api_key=anthropic_key, max_retries=4)
     prompt = _PROMPT.format(blank=blank_label, phrase=phrase, brand=_brand_block())
 
     def _call(extra: str = "") -> Listing:

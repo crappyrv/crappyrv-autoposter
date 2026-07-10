@@ -20,6 +20,21 @@ from dropbox.files import WriteMode
 _SETTLE_SECONDS = 90
 
 
+def _retry(fn, attempts: int = 5, backoff=(2, 4, 8, 16)):
+    """Retry a Dropbox network op on transient errors so a blip never fails a run."""
+    last = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except (dropbox.exceptions.InternalServerError,
+                dropbox.exceptions.RateLimitError,
+                ConnectionError, TimeoutError) as e:
+            last = e
+            if i < attempts - 1:
+                time.sleep(backoff[i])
+    raise last
+
+
 @dataclass
 class Incoming:
     product_type: str      # e.g. "shirts"
@@ -67,19 +82,19 @@ def list_incoming(dbx: dropbox.Dropbox, settings) -> list[Incoming]:
 def download(dbx: dropbox.Dropbox, path: str, dest: str | Path) -> Path:
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    md, resp = dbx.files_download(path)
+    md, resp = _retry(lambda: dbx.files_download(path))
     dest.write_bytes(resp.content)
     return dest
 
 
 def upload_printfile(dbx: dropbox.Dropbox, local_path: str | Path, folder: str, name: str) -> str:
     """Upload a processed print file and return a temporary direct URL (~4h)
-    that Printful can fetch."""
+    that Printify can fetch."""
     local_path = Path(local_path)
     dest = f"{folder}/{name}"
-    with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), dest, mode=WriteMode.overwrite, mute=True)
-    link = dbx.files_get_temporary_link(dest)
+    data = Path(local_path).read_bytes()
+    _retry(lambda: dbx.files_upload(data, dest, mode=WriteMode.overwrite, mute=True))
+    link = _retry(lambda: dbx.files_get_temporary_link(dest))
     return link.link
 
 
